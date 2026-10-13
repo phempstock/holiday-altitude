@@ -1,0 +1,664 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Holiday Altitude</title>
+<meta name="description" content="Shade the land between two altitudes to find holiday spots that are neither too hot nor too cold.">
+<meta name="theme-color" content="#1f2a26">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icons/favicon-64.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Altitude">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.16.0/dist/maplibre-gl.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Young+Serif&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  /* Layout: full-bleed map; one floating title card top-left, controls top-right. */
+  :root {
+    --paper: #f7f8f5;      /* card surface */
+    --ink: #1f2a26;        /* main text */
+    --ink-soft: #55625c;   /* secondary text */
+    --rule: #d6ddd7;       /* hairlines */
+    --accent: #2f7d5b;     /* UI accent */
+    --band: #1f9d6b;       /* altitude-band colour; matches BAND.color in the script (map stays light in both themes) */
+    --field: #eef1ed;      /* input and hover background */
+    --on-accent: #ffffff;  /* text on accent buttons */
+    --shadow: 0 2px 12px rgba(20, 35, 28, .16);
+    --font-display: "Young Serif", Georgia, "Times New Roman", serif;
+    --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #1b2320; --ink: #e8eee9; --ink-soft: #a3b1aa; --rule: #34413b;
+      --accent: #5fbf8f; --field: #26302c; --on-accent: #0f1a15; --shadow: 0 2px 14px rgba(0, 0, 0, .45); color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #1b2320; --ink: #e8eee9; --ink-soft: #a3b1aa; --rule: #34413b;
+    --accent: #5fbf8f; --field: #26302c; --on-accent: #0f1a15; --shadow: 0 2px 14px rgba(0, 0, 0, .45); color-scheme: dark;
+  }
+
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--paper); color: var(--ink); font: 14px/1.45 var(--font-body); }
+  #map { position: absolute; inset: 0; }
+
+  .titlecard {
+    position: absolute; z-index: 2;
+    top: calc(12px + env(safe-area-inset-top, 0px)); left: 12px;
+    max-width: min(320px, calc(100% - 84px));
+    background: var(--paper); color: var(--ink);
+    border: 1px solid var(--rule); border-radius: 10px; box-shadow: var(--shadow);
+    padding: 12px 16px;
+    max-height: calc(100% - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    overflow-y: auto; box-sizing: border-box;
+  }
+  .cardhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .toggle {
+    flex: none; font: inherit; font-size: .78rem; font-weight: 600; letter-spacing: .02em;
+    color: var(--accent); background: none; border: 1px solid var(--rule); border-radius: 999px;
+    padding: 3px 10px; cursor: pointer;
+  }
+  .toggle:hover { background: var(--field); }
+  .toggle:focus-visible, .about summary:focus-visible, .about a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .titlecard .summary { display: none; }
+  .titlecard.collapsed .summary { display: flex; }
+  .titlecard.collapsed #panel-body { display: none; }
+  .about { margin-top: 8px; font-size: .8rem; color: var(--ink-soft); }
+  .about summary { cursor: pointer; font-weight: 500; color: var(--ink); width: max-content; }
+  .about p { margin: 6px 0 0; max-width: 34em; }
+  .about a { color: var(--accent); }
+  .titlecard h1 {
+    margin: 0; font: 400 1.35rem/1.15 var(--font-display); letter-spacing: .005em;
+    text-wrap: balance;
+  }
+  .titlecard .tagline { margin: 4px 0 0; color: var(--ink-soft); font-size: .86rem; }
+  .titlecard .band {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 8px; font-size: .86rem; font-weight: 500; font-variant-numeric: tabular-nums;
+  }
+  .titlecard .swatch {
+    flex: none; width: 14px; height: 14px; border-radius: 3px;
+    background: var(--band); opacity: .75; border: 1px solid var(--band);
+  }
+  .bandctl { border: 0; margin: 8px 0 0; padding: 0; min-width: 0; }
+  .bandctl legend.band { padding: 0; margin: 0 0 6px; }
+  .ctlrow {
+    display: grid; grid-template-columns: 4.2rem 1fr auto; align-items: center; gap: 8px;
+    margin-top: 4px; font-size: .84rem;
+  }
+  .ctlrow label { color: var(--ink-soft); }
+  .ctlrow input[type="range"] { width: 100%; min-width: 0; margin: 0; accent-color: var(--accent); }
+  .ctlrow .num { white-space: nowrap; color: var(--ink-soft); font-size: .8rem; }
+  .ctlrow input[type="number"] {
+    width: 4.6rem; font: inherit; font-size: .86rem; color: var(--ink); text-align: right;
+    font-variant-numeric: tabular-nums;
+    background: var(--field); border: 1px solid var(--rule); border-radius: 6px; padding: 3px 6px;
+  }
+  .ctlrow input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .hint { margin: 6px 0 0; font-size: .78rem; color: var(--ink-soft); }
+  .height-pop strong { display: block; font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+  .height-pop .verdict { display: block; font-size: .82rem; }
+  .height-pop .in { color: #17784f; font-weight: 600; }
+  .height-pop .out { color: #8a4a12; }
+  .visually-hidden {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+  .search { display: flex; gap: 6px; margin-top: 10px; }
+  .search input {
+    flex: 1; min-width: 0; font: inherit; font-size: .9rem; color: var(--ink);
+    background: var(--field); border: 1px solid var(--rule); border-radius: 7px; padding: 7px 10px;
+  }
+  .search button {
+    flex: none; font: inherit; font-size: .86rem; font-weight: 600; color: var(--on-accent);
+    background: var(--accent); border: 0; border-radius: 7px; padding: 7px 12px; cursor: pointer;
+  }
+  .search button:disabled { opacity: .6; cursor: progress; }
+  .search input:focus-visible, .search button:focus-visible, .results button:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+  .search-status { margin: 6px 0 0; font-size: .8rem; color: var(--ink-soft); }
+  .results {
+    list-style: none; margin: 6px 0 0; padding: 0; max-height: 220px; overflow-y: auto;
+    border: 1px solid var(--rule); border-radius: 7px;
+  }
+  .results li + li { border-top: 1px solid var(--rule); }
+  .results button {
+    display: block; width: 100%; text-align: left; font: inherit; color: var(--ink);
+    background: none; border: 0; padding: 7px 10px; cursor: pointer;
+  }
+  .results button:hover { background: var(--field); }
+  .results .r-name { display: block; font-weight: 600; font-size: .88rem; }
+  .results .r-where { display: block; font-size: .76rem; color: var(--ink-soft); overflow-wrap: anywhere; }
+  .maplibregl-popup-content { font: 13px/1.4 var(--font-body); color: #1f2a26; padding: 8px 12px; }
+  .maplibregl-popup-content strong { display: block; font-size: .95rem; }
+  .titlecard .readout {
+    margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--rule);
+    font-size: .78rem; color: var(--ink-soft); font-variant-numeric: tabular-nums;
+    letter-spacing: .02em;
+  }
+
+  .notice {
+    position: absolute; z-index: 3; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    max-width: min(420px, calc(100% - 32px));
+    background: var(--paper); color: var(--ink); border: 1px solid var(--rule);
+    border-radius: 10px; box-shadow: var(--shadow); padding: 16px 18px;
+  }
+  .notice h2 { margin: 0 0 6px; font: 400 1.1rem var(--font-display); }
+  .notice p { margin: 0; color: var(--ink-soft); }
+
+  /* Keep MapLibre's controls clear of phone system bars */
+  .maplibregl-ctrl-top-right { top: env(safe-area-inset-top, 0px); }
+  .maplibregl-ctrl-bottom-left, .maplibregl-ctrl-bottom-right { bottom: env(safe-area-inset-bottom, 0px); }
+
+  @media (max-width: 480px) {
+    .titlecard { padding: 10px 12px; }
+    .titlecard h1 { font-size: 1.15rem; }
+    .titlecard .tagline { display: none; }
+  }
+</style>
+</head>
+<body>
+  <div id="map" role="region" aria-label="Map"></div>
+
+  <header class="titlecard" id="panel">
+    <div class="cardhead">
+      <h1>Holiday Altitude</h1>
+      <button type="button" class="toggle" id="panel-toggle" aria-expanded="true" aria-controls="panel-body">Hide</button>
+    </div>
+    <div class="band summary" id="band-summary"><span class="swatch" aria-hidden="true"></span><span id="band-summary-label">Shaded: 500 – 1,500 m above sea level</span></div>
+    <div id="panel-body">
+    <p class="tagline">Find land at the altitude that suits your holiday.</p>
+    <fieldset class="bandctl">
+      <legend class="band"><span class="swatch" aria-hidden="true"></span><span id="band-label">Shaded: 500 – 1,500 m above sea level</span></legend>
+      <div class="ctlrow">
+        <label for="min-range">Lowest</label>
+        <input id="min-range" type="range" min="0" max="5000" step="50" value="500">
+        <span class="num"><input id="min-num" type="number" min="0" max="8900" step="50" value="500" inputmode="numeric" aria-label="Lowest altitude in metres"> m</span>
+      </div>
+      <div class="ctlrow">
+        <label for="max-range">Highest</label>
+        <input id="max-range" type="range" min="0" max="5000" step="50" value="1500">
+        <span class="num"><input id="max-num" type="number" min="0" max="8900" step="50" value="1500" inputmode="numeric" aria-label="Highest altitude in metres"> m</span>
+      </div>
+      <p class="hint">Click anywhere on the map to see its height.</p>
+    </fieldset>
+    <form class="search" id="search-form" role="search" autocomplete="off">
+      <label for="search-input" class="visually-hidden">Search for a place</label>
+      <input id="search-input" type="search" placeholder="Search for a town or village" enterkeyhint="search">
+      <button id="search-button" type="submit">Find</button>
+    </form>
+    <p class="search-status" id="search-status" hidden></p>
+    <ul class="results" id="search-results" hidden></ul>
+    <div class="readout" id="readout">Costa Rica</div>
+    <details class="about">
+      <summary>About this map</summary>
+      <p>Green shading marks land between your lowest and highest altitudes. Heights come from global elevation data with about 30 m detail, so a single spot can differ from a local sign by a few tens of metres, more on steep slopes.</p>
+      <p>Altitude is only a rough guide to temperature. The same height is warmer nearer the equator and varies with the season.</p>
+      <p class="credits">Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>. Map tiles by <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>. Elevation from <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noopener">Terrain Tiles on AWS</a> (<a href="https://github.com/tilezen/joerd/blob/master/docs/attribution.md" target="_blank" rel="noopener">sources</a>). Place search by <a href="https://nominatim.org" target="_blank" rel="noopener">Nominatim</a>. Built with <a href="https://maplibre.org" target="_blank" rel="noopener">MapLibre</a>.</p>
+    </details>
+    </div>
+  </header>
+
+  <div class="notice" id="notice" hidden>
+    <h2 id="notice-title">The map could not load</h2>
+    <p id="notice-text"></p>
+  </div>
+
+  <script>
+    // Installable app support: only works when the page is on a website (https), not opened as a file.
+    if ('serviceWorker' in navigator && location.protocol === 'https:') {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('sw.js').catch(function (e) { console.warn('Service worker not registered', e); });
+      });
+    }
+  </script>
+  <script src="https://unpkg.com/maplibre-gl@5.16.0/dist/maplibre-gl.js"></script>
+  <script>
+    (function () {
+      // Free, keyless base map from OpenFreeMap (OpenStreetMap data).
+      const BASEMAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
+
+      // Opening view: the whole of Costa Rica (west, south, east, north).
+      const START_BOUNDS = [[-85.95, 8.03], [-82.55, 11.22]];
+
+      // Leave room for the title card on wider screens so it doesn't cover the country.
+      function startPadding() {
+        const w = window.innerWidth;
+        if (w >= 760) return { top: 40, bottom: 40, left: 360, right: 70 };
+        return { top: 150, bottom: 30, left: 20, right: 60 };
+      }
+
+      const notice = document.getElementById('notice');
+      function showNotice(title, text) {
+        document.getElementById('notice-title').textContent = title;
+        document.getElementById('notice-text').textContent = text;
+        notice.hidden = false;
+      }
+
+      if (typeof maplibregl === 'undefined') {
+        showNotice('The map could not load',
+          'The mapping library did not download. Check your internet connection and reload the page.');
+        return;
+      }
+
+      let map;
+      try {
+        map = new maplibregl.Map({
+          container: 'map',
+          style: BASEMAP_STYLE,
+          bounds: START_BOUNDS,
+          fitBoundsOptions: { padding: startPadding() },
+          maxPitch: 75,
+          attributionControl: { compact: true }
+        });
+      } catch (err) {
+        showNotice('Your browser cannot show this map',
+          'The map needs WebGL, which is turned off or unsupported in this browser. Try an up-to-date Chrome, Edge, Firefox or Safari.');
+        return;
+      }
+
+      map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
+      map.addControl(new maplibregl.ScaleControl({ unit: 'metric', maxWidth: 120 }), 'bottom-left');
+
+      // Small readout of where the map is pointing, useful while we build.
+      const readout = document.getElementById('readout');
+      function fmt(v, pos, neg) { return Math.abs(v).toFixed(2) + '° ' + (v >= 0 ? pos : neg); }
+      function updateReadout() {
+        const c = map.getCenter();
+        readout.textContent = 'Zoom ' + map.getZoom().toFixed(1) + ' · ' +
+          fmt(c.lat, 'N', 'S') + ', ' + fmt(c.lng, 'E', 'W');
+      }
+      map.on('move', updateReadout);
+
+      // ---- Step 2: elevation data and the altitude band ----
+      // Free global elevation tiles (AWS Open Data, Terrarium encoding).
+      const ELEVATION_TILES = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png';
+
+      // The band the user has chosen. Starts at 500–1,500 m, or the last band used on this device.
+      const BAND = { min: 500, max: 1500, color: '#1f9d6b', opacity: 0.55 };
+      const MIN_GAP = 50;      // the band is always at least 50 m deep
+      const TOP_LIMIT = 8900;  // just above Everest
+      try {
+        const saved = JSON.parse(localStorage.getItem('holiday-altitude-band') || 'null');
+        if (saved && isFinite(saved.min) && isFinite(saved.max) && saved.min >= 0 &&
+            saved.max <= TOP_LIMIT && saved.max - saved.min >= MIN_GAP) {
+          BAND.min = saved.min; BAND.max = saved.max;
+        }
+      } catch (e) { /* storage unavailable: use the defaults */ }
+
+      // Colour ramp: transparent below the band, solid colour inside it, transparent above.
+      // The tiny 0.1 m gaps make the edges sharp instead of fading.
+      // The lower edge never goes below 0.5 m, so the sea is never shaded.
+      function bandRamp(min, max, color) {
+        const lo = Math.max(min, 0.5);
+        return [
+          'interpolate', ['linear'], ['elevation'],
+          -12000, 'rgba(0,0,0,0)',
+          lo - 0.1, 'rgba(0,0,0,0)',
+          lo, color,
+          max, color,
+          max + 0.1, 'rgba(0,0,0,0)',
+          9000, 'rgba(0,0,0,0)'
+        ];
+      }
+
+      // ---- Fold-away panel: open on wider screens, folded on phones ----
+      const panel = document.getElementById('panel');
+      const toggle = document.getElementById('panel-toggle');
+      const isNarrow = function () { return window.innerWidth < 600; };
+      function setPanelOpen(open) {
+        panel.classList.toggle('collapsed', !open);
+        toggle.setAttribute('aria-expanded', String(open));
+        toggle.textContent = open ? 'Hide' : 'Show';
+      }
+      toggle.addEventListener('click', function () {
+        setPanelOpen(panel.classList.contains('collapsed'));
+      });
+      setPanelOpen(!isNarrow());
+
+      // ---- Step 3: altitude controls ----
+      const minRange = document.getElementById('min-range');
+      const maxRange = document.getElementById('max-range');
+      const minNum = document.getElementById('min-num');
+      const maxNum = document.getElementById('max-num');
+      const bandLabel = document.getElementById('band-label');
+      const bandSummaryLabel = document.getElementById('band-summary-label');
+      const nf = new Intl.NumberFormat('en-GB');
+
+      function syncControls() {
+        // Sliders run 0–5,000 m; typed values can go higher, and the slider then sits at its end.
+        minRange.value = Math.min(BAND.min, 5000);
+        maxRange.value = Math.min(BAND.max, 5000);
+        if (document.activeElement !== minNum) minNum.value = BAND.min;
+        if (document.activeElement !== maxNum) maxNum.value = BAND.max;
+        const text = 'Shaded: ' + nf.format(BAND.min) + ' – ' + nf.format(BAND.max) + ' m above sea level';
+        bandLabel.textContent = text;
+        bandSummaryLabel.textContent = text;
+      }
+
+      let saveTimer = null;
+      function applyBand() {
+        syncControls();
+        if (map.getLayer('altitude-band')) {
+          map.setPaintProperty('altitude-band', 'color-relief-color', bandRamp(BAND.min, BAND.max, BAND.color));
+        }
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(function () {
+          try { localStorage.setItem('holiday-altitude-band', JSON.stringify({ min: BAND.min, max: BAND.max })); } catch (e) {}
+        }, 400);
+      }
+
+      // Moving one end past the other pushes the other end along, keeping a 50 m gap.
+      function setMin(v) {
+        v = Math.round(Math.max(0, Math.min(TOP_LIMIT - MIN_GAP, v)));
+        BAND.min = v;
+        if (BAND.max - BAND.min < MIN_GAP) BAND.max = BAND.min + MIN_GAP;
+        applyBand();
+      }
+      function setMax(v) {
+        v = Math.round(Math.max(MIN_GAP, Math.min(TOP_LIMIT, v)));
+        BAND.max = v;
+        if (BAND.max - BAND.min < MIN_GAP) BAND.min = BAND.max - MIN_GAP;
+        applyBand();
+      }
+
+      minRange.addEventListener('input', function () { setMin(+minRange.value); });
+      maxRange.addEventListener('input', function () { setMax(+maxRange.value); });
+      // Typed numbers apply when the box is left or Enter is pressed.
+      minNum.addEventListener('change', function () { if (minNum.value !== '') setMin(+minNum.value); else syncControls(); });
+      maxNum.addEventListener('change', function () { if (maxNum.value !== '') setMax(+maxNum.value); else syncControls(); });
+      syncControls();
+
+      // ---- Height of any spot, read from the same free elevation tiles ----
+      // Terrarium tiles store height in each pixel's colour: (R × 256 + G + B / 256) − 32768 metres.
+      const HEIGHT_ZOOM = 13;  // about 19 m per pixel at the equator, finer than the source data
+      const tileCache = new Map();
+
+      function loadTile(z, x, y) {
+        const key = z + '/' + x + '/' + y;
+        if (tileCache.has(key)) return tileCache.get(key);
+        const p = new Promise(function (resolve, reject) {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = function () {
+            const c = document.createElement('canvas');
+            c.width = img.width; c.height = img.height;
+            const ctx = c.getContext('2d', { willReadFrequently: true });
+            ctx.drawImage(img, 0, 0);
+            resolve(ctx.getImageData(0, 0, c.width, c.height));
+          };
+          img.onerror = function () { tileCache.delete(key); reject(new Error('Elevation tile failed to load')); };
+          img.src = ELEVATION_TILES.replace('{z}', z).replace('{x}', x).replace('{y}', y);
+        });
+        tileCache.set(key, p);
+        return p;
+      }
+
+      async function heightAt(lng, lat) {
+        const z = HEIGHT_ZOOM, n = Math.pow(2, z);
+        const xf = (lng + 180) / 360 * n;
+        const latRad = lat * Math.PI / 180;
+        const yf = (1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * n;
+        const x = Math.floor(xf), y = Math.floor(yf);
+        const data = await loadTile(z, x, y);
+        const px = Math.min(data.width - 1, Math.floor((xf - x) * data.width));
+        const py = Math.min(data.height - 1, Math.floor((yf - y) * data.height));
+        const i = (py * data.width + px) * 4;
+        return (data.data[i] * 256 + data.data[i + 1] + data.data[i + 2] / 256) - 32768;
+      }
+
+      // Builds the height line and the in/out-of-band line used in popups.
+      function heightContent(h) {
+        const box = document.createDocumentFragment();
+        const strong = document.createElement('strong');
+        const verdict = document.createElement('span');
+        verdict.className = 'verdict';
+        if (h <= 0) {
+          strong.textContent = 'At or below sea level';
+          verdict.textContent = 'Outside your band';
+          verdict.classList.add('out');
+        } else {
+          const m = Math.round(h);
+          strong.textContent = nf.format(m) + ' m above sea level';
+          if (m < BAND.min) {
+            verdict.textContent = nf.format(BAND.min - m) + ' m below your band';
+            verdict.classList.add('out');
+          } else if (m > BAND.max) {
+            verdict.textContent = nf.format(m - BAND.max) + ' m above your band';
+            verdict.classList.add('out');
+          } else {
+            verdict.textContent = 'Inside your band';
+            verdict.classList.add('in');
+          }
+        }
+        box.appendChild(strong); box.appendChild(verdict);
+        return box;
+      }
+
+      let clickPopup = null;
+      map.on('click', async function (e) {
+        // Ignore clicks on the search pin; it has its own popup.
+        const t = e.originalEvent && e.originalEvent.target;
+        if (t && t.closest && t.closest('.maplibregl-marker, .maplibregl-popup')) return;
+
+        if (clickPopup) clickPopup.remove();
+        const wrap = document.createElement('div');
+        wrap.className = 'height-pop';
+        wrap.textContent = 'Reading height…';
+        clickPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '240px' })
+          .setLngLat(e.lngLat).setDOMContent(wrap).addTo(map);
+        try {
+          const h = await heightAt(e.lngLat.lng, e.lngLat.lat);
+          wrap.textContent = '';
+          wrap.appendChild(heightContent(h));
+        } catch (err) {
+          wrap.textContent = 'The height could not be read here. Check your internet connection and try again.';
+          console.warn(err);
+        }
+      });
+
+      function addAltitudeBand() {
+        map.addSource('elevation', {
+          type: 'raster-dem',
+          tiles: [ELEVATION_TILES],
+          encoding: 'terrarium',
+          tileSize: 256,
+          maxzoom: 14,
+          attribution: '<a href="https://github.com/tilezen/joerd/blob/master/docs/attribution.md" target="_blank" rel="noopener">Elevation: Terrain Tiles (Mapzen, AWS Open Data)</a>'
+        });
+
+        // Put the band beneath the map's labels so place names stay readable.
+        const firstLabel = map.getStyle().layers.find(function (l) { return l.type === 'symbol'; });
+
+        // Light hill shading so valleys and ridges are easy to read.
+        map.addLayer({
+          id: 'terrain-shade',
+          type: 'hillshade',
+          source: 'elevation',
+          paint: {
+            'hillshade-exaggeration': 0.35,
+            'hillshade-shadow-color': '#3b4a43',
+            'hillshade-highlight-color': 'rgba(255,255,255,0.35)',
+            'hillshade-accent-color': '#3b4a43'
+          }
+        }, firstLabel ? firstLabel.id : undefined);
+        map.addLayer({
+          id: 'altitude-band',
+          type: 'color-relief',
+          source: 'elevation',
+          paint: {
+            'color-relief-color': bandRamp(BAND.min, BAND.max, BAND.color),
+            'color-relief-opacity': BAND.opacity
+          }
+        }, firstLabel ? firstLabel.id : undefined);
+      }
+
+      // ---- Smaller places: make village and hamlet names easier to read ----
+      // The base map shows villages from zoom 9 and hamlets from zoom 8, when they fit.
+      // Darker text with a stronger white outline keeps them legible over the green band.
+      function strengthenSmallPlaceLabels() {
+        ['label_town', 'label_village', 'label_other'].forEach(function (id) {
+          if (!map.getLayer(id)) return;
+          map.setPaintProperty(id, 'text-color', '#1d2622');
+          map.setPaintProperty(id, 'text-halo-color', 'rgba(255,255,255,0.92)');
+          map.setPaintProperty(id, 'text-halo-width', 1.6);
+        });
+        if (map.getLayer('label_village')) {
+          map.setLayoutProperty('label_village', 'text-size',
+            ['interpolate', ['exponential', 1.2], ['zoom'], 8, 11, 11, 13, 14, 15]);
+        }
+        if (map.getLayer('label_other')) {
+          map.setLayoutProperty('label_other', 'text-size',
+            ['interpolate', ['linear'], ['zoom'], 8, 10, 12, 12, 15, 13]);
+        }
+      }
+
+      // ---- Place search (OpenStreetMap Nominatim; free, max one request per second) ----
+      const form = document.getElementById('search-form');
+      const input = document.getElementById('search-input');
+      const button = document.getElementById('search-button');
+      const statusEl = document.getElementById('search-status');
+      const resultsEl = document.getElementById('search-results');
+      let lastSearchAt = 0;
+      let placeMarker = null;
+
+      function setStatus(text) {
+        statusEl.textContent = text || '';
+        statusEl.hidden = !text;
+      }
+
+      function shortName(r) {
+        return r.name || (r.display_name || '').split(',')[0];
+      }
+      function whereText(r) {
+        const parts = (r.display_name || '').split(',').map(function (s) { return s.trim(); });
+        return parts.slice(1).join(', ');
+      }
+
+      function goTo(r) {
+        const lat = parseFloat(r.lat), lon = parseFloat(r.lon);
+        const bb = r.boundingbox ? r.boundingbox.map(parseFloat) : null; // [south, north, west, east]
+        // Small places get a close-up; larger areas fit their outline.
+        if (bb && (bb[1] - bb[0] > 0.05 || bb[3] - bb[2] > 0.05)) {
+          map.fitBounds([[bb[2], bb[0]], [bb[3], bb[1]]], { padding: startPadding(), maxZoom: 13, duration: 1800 });
+        } else {
+          map.flyTo({ center: [lon, lat], zoom: 13, duration: 1800 });
+        }
+
+        if (placeMarker) placeMarker.remove();
+        const popup = new maplibregl.Popup({ offset: 28, closeButton: true });
+        const box = document.createElement('div');
+        const strong = document.createElement('strong');
+        strong.textContent = shortName(r);
+        const where = document.createElement('span');
+        where.textContent = whereText(r);
+        box.appendChild(strong); box.appendChild(where);
+        const hp = document.createElement('div');
+        hp.className = 'height-pop';
+        hp.style.marginTop = '6px';
+        hp.textContent = 'Reading height…';
+        box.appendChild(hp);
+        popup.setDOMContent(box);
+        heightAt(lon, lat).then(function (h) {
+          hp.textContent = '';
+          hp.appendChild(heightContent(h));
+        }).catch(function () { hp.textContent = 'Height unavailable.'; });
+        placeMarker = new maplibregl.Marker({ color: '#c2410c' }).setLngLat([lon, lat]).setPopup(popup).addTo(map);
+        placeMarker.togglePopup();
+      }
+
+      function showResults(list) {
+        resultsEl.innerHTML = '';
+        list.forEach(function (r) {
+          const li = document.createElement('li');
+          const b = document.createElement('button');
+          b.type = 'button';
+          const n = document.createElement('span'); n.className = 'r-name'; n.textContent = shortName(r);
+          const w = document.createElement('span'); w.className = 'r-where'; w.textContent = whereText(r);
+          b.appendChild(n); b.appendChild(w);
+          b.addEventListener('click', function () {
+            resultsEl.hidden = true;
+            setStatus('');
+            if (isNarrow()) setPanelOpen(false);
+            goTo(r);
+          });
+          li.appendChild(b);
+          resultsEl.appendChild(li);
+        });
+        resultsEl.hidden = list.length === 0;
+      }
+
+      form.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        const q = input.value.trim();
+        if (!q) { setStatus('Type the name of a place, then press Find.'); return; }
+
+        // Respect Nominatim's fair-use limit of one request per second.
+        const wait = 1100 - (Date.now() - lastSearchAt);
+        if (wait > 0) await new Promise(function (res) { setTimeout(res, wait); });
+        lastSearchAt = Date.now();
+
+        button.disabled = true;
+        resultsEl.hidden = true;
+        setStatus('Searching…');
+
+        // Prefer places in the area currently on screen, but still search everywhere.
+        const b = map.getBounds();
+        const params = new URLSearchParams({
+          q: q, format: 'jsonv2', limit: '8', 'accept-language': 'en',
+          viewbox: [b.getWest(), b.getNorth(), b.getEast(), b.getSouth()].join(',')
+        });
+
+        try {
+          const resp = await fetch('https://nominatim.openstreetmap.org/search?' + params.toString(), {
+            headers: { 'Accept': 'application/json' }
+          });
+          if (!resp.ok) throw new Error('HTTP ' + resp.status);
+          const data = await resp.json();
+          if (!data.length) {
+            setStatus('No places found for "' + q + '". Check the spelling or try a nearby town.');
+          } else if (data.length === 1) {
+            setStatus('');
+            if (isNarrow()) setPanelOpen(false);
+            goTo(data[0]);
+          } else {
+            setStatus(data.length + ' places found. Choose one:');
+            showResults(data);
+          }
+        } catch (err) {
+          setStatus('The place search could not be reached. Check your internet connection and try again in a moment.');
+          console.warn(err);
+        } finally {
+          button.disabled = false;
+        }
+      });
+
+      let loaded = false;
+      map.on('load', function () {
+        loaded = true;
+        updateReadout();
+        try { strengthenSmallPlaceLabels(); } catch (err) { console.warn(err); }
+        try {
+          addAltitudeBand();
+        } catch (err) {
+          showNotice('The altitude shading could not be added',
+            'The base map loaded, but the elevation layer failed. Reload the page; if it keeps happening, tell me the browser you are using.');
+          console.warn(err);
+        }
+      });
+      map.on('error', function (e) {
+        // Only report a failure if the base map never appeared.
+        if (!loaded) {
+          showNotice('The base map did not load',
+            'The free map tiles could not be reached. Check your internet connection and reload the page.');
+        }
+        console.warn('Map error:', e && e.error ? e.error.message : e);
+      });
+    })();
+  </script>
+</body>
+</html>
