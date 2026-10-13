@@ -1,7 +1,7 @@
 // Holiday Altitude service worker.
 // Keeps the app's own files so it opens quickly and can be installed on phones.
 // Map tiles, elevation and search always come from the network, so they are never stale.
-const CACHE = 'holiday-altitude-v2';
+const CACHE = 'holiday-altitude-v3';
 const APP_FILES = [
   './',
   './index.html',
