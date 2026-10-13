@@ -3,7 +3,7 @@
 Build Holiday Altitude's climate tiles.
 
 Reads CHELSA V2.1 monthly climatologies (1981-2010, about 1 km, licence CC0) for
-typical daily maximum and minimum temperature, clips them to the area below, and
+typical daily maximum and minimum temperature, clips them to the regions below, and
 writes web-map tiles that store the temperature in each pixel's colour using the
 Terrarium encoding (the same scheme as the elevation tiles):
 
@@ -28,8 +28,13 @@ import time
 import numpy as np
 from PIL import Image
 
-# Area covered: Costa Rica plus a margin (west, south, east, north), in degrees.
-BBOX = (-86.3, 7.7, -82.3, 11.5)
+# Areas covered (west, south, east, north), in degrees. Keep in step with CLIMATE_REGIONS
+# in index.html. Tiles from all regions go into one shared tile tree.
+REGIONS = {
+    "costa-rica": (-86.3, 7.7, -82.3, 11.5),
+    "spain": (-9.6, 35.8, 4.6, 44.0),            # mainland Spain, Portugal, Balearic Islands
+    "canary-islands": (-18.4, 27.5, -13.2, 29.6),
+}
 # Zoom levels written. 9 is about 300 m per pixel here, finer than the 1 km source;
 # the app lets MapLibre enlarge zoom-9 tiles smoothly beyond that.
 ZOOMS = list(range(5, 10))
@@ -50,6 +55,19 @@ CHECKS = [
     ("Monteverde", 10.300, -84.818, 1400),
     ("San Gerardo de Dota", 9.550, -83.805, 2200),
     ("Cerro de la Muerte", 9.560, -83.750, 3400),
+    ("Madrid", 40.417, -3.704, 650),
+    ("Seville", 37.389, -5.984, 10),
+    ("Bilbao", 43.263, -2.935, 20),
+    ("Pradollano (Sierra Nevada)", 37.095, -3.397, 2100),
+    ("Palma de Mallorca", 39.570, 2.650, 10),
+    ("Las Palmas (Gran Canaria)", 28.110, -15.420, 10),
+]
+# (warmer place, cooler place, month, at least this many °C warmer in typical highs)
+COMPARISONS = [
+    ("Puntarenas (coast)", "San Gerardo de Dota", 1, 5),
+    ("Seville", "Pradollano (Sierra Nevada)", 7, 8),
+    ("Seville", "Bilbao", 7, 5),
+    ("Las Palmas (Gran Canaria)", "Madrid", 1, 5),
 ]
 
 
@@ -97,8 +115,8 @@ def lonlat_to_tile(lon, lat, z):
     return x, y
 
 
-def tiles_for_bbox(z):
-    west, south, east, north = BBOX
+def tiles_for_bbox(z, bbox):
+    west, south, east, north = bbox
     x0, y0 = lonlat_to_tile(west, north, z)
     x1, y1 = lonlat_to_tile(east, south, z)
     for x in range(int(math.floor(x0)), int(math.floor(x1)) + 1):
@@ -171,7 +189,8 @@ def chelsa_url(var, month):
     raise RuntimeError("Could not find CHELSA %s for month %d" % (var, month))
 
 
-def read_chelsa(var, month):
+def read_chelsa(var, month, bboxes):
+    """Reads one month of one variable for every region; returns a list of Grids."""
     import rasterio
     from rasterio.windows import from_bounds
 
@@ -181,22 +200,39 @@ def read_chelsa(var, month):
                GDAL_HTTP_MAX_RETRY="5", GDAL_HTTP_RETRY_DELAY="3")
     with rasterio.Env(**env):
         with rasterio.open("/vsicurl/" + url) as src:
-            win = from_bounds(*BBOX, transform=src.transform).round_offsets().round_lengths()
-            arr = src.read(1, window=win, masked=True).astype("float64").filled(np.nan)
-            if src.nodata is not None:
-                arr[arr == src.nodata] = np.nan
-            tr = src.window_transform(win)
             scale = src.scales[0] if src.scales else None
             offset = src.offsets[0] if src.offsets else None
-    data, how = to_celsius(arr, scale, offset)
-    return Grid(data, west=tr.c, north=tr.f, dx=tr.a, dy=-tr.e), url, how
+            grids, how = [], ""
+            for bbox in bboxes:
+                win = from_bounds(*bbox, transform=src.transform).round_offsets().round_lengths()
+                arr = src.read(1, window=win, masked=True).astype("float64").filled(np.nan)
+                if src.nodata is not None:
+                    arr[arr == src.nodata] = np.nan
+                tr = src.window_transform(win)
+                data, how = to_celsius(arr, scale, offset)
+                grids.append(Grid(data, west=tr.c, north=tr.f, dx=tr.a, dy=-tr.e))
+    return grids, url, how
 
 
-def synthetic_grid(var, month):
+def synthetic_grids(var, month, bboxes):
+    grids = [synthetic_grid(var, month, b) for b in bboxes]
+    return grids, "synthetic", "synthetic °C"
+
+
+def sample_all(grids, lon, lat):
+    """Sample every region's grid and keep the first value found at each point."""
+    out = None
+    for g in grids:
+        v = g.sample(lon, lat)
+        out = v if out is None else np.where(np.isnan(out), v, out)
+    return out
+
+
+def synthetic_grid(var, month, bbox):
     """Made-up but plausible temperatures for offline testing: cooler with height
     (a fake mountain ridge) and slightly seasonal; NaN over a fake sea."""
     dx = dy = 1.0 / 120.0  # 30 arc-seconds, like CHELSA
-    west, south, east, north = BBOX
+    west, south, east, north = bbox
     lons = west + (np.arange(int((east - west) / dx)) + 0.5) * dx
     lats = north - (np.arange(int((north - south) / dy)) + 0.5) * dy
     LON, LAT = np.meshgrid(lons, lats)
@@ -204,9 +240,10 @@ def synthetic_grid(var, month):
     base = 32.0 if var == "tasmax" else 22.0
     season = 1.5 * math.cos((month - 4) / 12.0 * 2 * math.pi)
     t = base + season - ridge * 0.0062
-    sea = (LAT < 8.3) | (LON < -85.9)
+    t = t - np.clip(LAT - 10, 0, None) * 0.6   # cooler further from the equator
+    sea = (LAT < south + 0.6) | (LON < west + 0.4)
     t[sea] = np.nan
-    return Grid(t, west, north, dx, dy), "synthetic", "synthetic °C"
+    return Grid(t, west, north, dx, dy)
 
 
 # ---------- Main ----------
@@ -217,7 +254,7 @@ def build(out_dir, synthetic):
         "source": "CHELSA V2.1 climatologies 1981-2010 (Karger et al.), licence CC0" if not synthetic
                   else "SYNTHETIC TEST DATA - not real climate",
         "encoding": "terrarium, value in °C, rounded to 0.1 °C; %g = no data" % NODATA_C,
-        "bbox": BBOX, "minzoom": ZOOMS[0], "maxzoom": ZOOMS[-1],
+        "regions": REGIONS, "minzoom": ZOOMS[0], "maxzoom": ZOOMS[-1],
         "variables": {"tmax": "typical daily maximum temperature",
                       "tmin": "typical daily minimum temperature"},
         "files": {}, "checks": {name: {} for name, *_ in CHECKS},
@@ -225,21 +262,25 @@ def build(out_dir, synthetic):
     tile_count = 0
     byte_count = 0
     worst_roundtrip = 0.0
+    bboxes = list(REGIONS.values())
+    # Every tile any region needs, at each zoom (regions that share a tile are merged into it).
+    tiles = {z: sorted({t for b in bboxes for t in tiles_for_bbox(z, b)}) for z in ZOOMS}
 
     for ours, chelsa in VARIABLES.items():
         for month in range(1, 13):
-            grid, url, how = synthetic_grid(chelsa, month) if synthetic else read_chelsa(chelsa, month)
+            grids, url, how = (synthetic_grids(chelsa, month, bboxes) if synthetic
+                               else read_chelsa(chelsa, month, bboxes))
             meta["files"]["%s_%02d" % (ours, month)] = {"url": url, "units": how}
             print("%s %02d: %s; %s" % (ours, month, url, how), flush=True)
 
             for name, lat, lon, _h in CHECKS:
-                v = float(grid.sample(np.array([lon]), np.array([lat]))[0])
+                v = float(sample_all(grids, np.array([lon]), np.array([lat]))[0])
                 meta["checks"][name]["%s_%02d" % (ours, month)] = None if math.isnan(v) else round(v, 1)
 
             for z in ZOOMS:
-                for x, y in tiles_for_bbox(z):
+                for x, y in tiles[z]:
                     LON, LAT = tile_pixel_lonlat(z, x, y)
-                    vals = grid.sample(LON, LAT)
+                    vals = sample_all(grids, LON, LAT)
                     rgb = encode_terrarium(vals)
                     # round-trip check on the land pixels
                     land = ~np.isnan(vals)
@@ -274,11 +315,13 @@ def build(out_dir, synthetic):
                 problems.append("%s month %d has no data" % (name, m))
             elif not (-25 <= lo <= hi <= 45):
                 problems.append("%s month %d implausible: high %s, low %s" % (name, m, hi, lo))
-        print("  %-22s %s" % (name, "  ".join(row)))
-    coast = meta["checks"]["Puntarenas (coast)"].get("tmax_01")
-    dota = meta["checks"]["San Gerardo de Dota"].get("tmax_01")
-    if coast is not None and dota is not None and not coast > dota + 5:
-        problems.append("coast (%s) should be much warmer than Dota (%s) in January" % (coast, dota))
+        print("  %-27s %s" % (name, "  ".join(row)))
+    for warm, cool, month, gap in ([] if synthetic else COMPARISONS):
+        a = meta["checks"][warm].get("tmax_%02d" % month)
+        b = meta["checks"][cool].get("tmax_%02d" % month)
+        if a is not None and b is not None and not a >= b + gap:
+            problems.append("%s (%s) should be at least %d °C warmer than %s (%s) in month %d"
+                            % (warm, a, gap, cool, b, month))
 
     print("\n%d tiles, %.1f MB, worst round-trip error %.3f °C" % (tile_count, byte_count / 1e6, worst_roundtrip))
     if problems:
