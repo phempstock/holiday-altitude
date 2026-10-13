@@ -83,6 +83,33 @@
     flex: none; width: 14px; height: 14px; border-radius: 3px;
     background: var(--band); opacity: .75; border: 1px solid var(--band);
   }
+  .modes {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-top: 10px;
+    border: 1px solid var(--rule); border-radius: 8px; overflow: hidden;
+  }
+  .mode {
+    font: inherit; font-size: .84rem; font-weight: 600; color: var(--ink-soft);
+    background: none; border: 0; padding: 6px 8px; cursor: pointer;
+  }
+  .mode + .mode { border-left: 1px solid var(--rule); }
+  .mode[aria-checked="true"] { background: var(--accent); color: var(--on-accent); }
+  .mode:focus-visible, .months button:focus-visible, .check input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .months { display: grid; grid-template-columns: repeat(12, 1fr); gap: 3px; margin: 2px 0 6px; }
+  .months button {
+    font: inherit; font-size: .74rem; font-weight: 600; color: var(--ink-soft);
+    background: var(--field); border: 1px solid var(--rule); border-radius: 5px;
+    padding: 4px 0; min-width: 0; cursor: pointer;
+  }
+  .months button[aria-checked="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  .ctlrow.wide { grid-template-columns: 6.6rem 1fr 3.4rem; }
+  .ctlrow output { font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 600; }
+  .ctlrow.wide .num { text-align: right; }
+  .check { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: .82rem; color: var(--ink-soft); cursor: pointer; }
+  .check input { accent-color: var(--accent); margin: 0; }
+  .clim-pop { margin-top: 6px; padding-top: 6px; border-top: 1px solid #dde3de; }
+  .clim-pop strong { font-size: .92rem !important; }
+  .clim-pop svg { display: block; margin-top: 4px; max-width: 100%; height: auto; }
+  .clim-pop .cap { display: block; font-size: .7rem; color: #6b7872; }
   .bandctl { border: 0; margin: 8px 0 0; padding: 0; min-width: 0; }
   .bandctl legend.band { padding: 0; margin: 0 0 6px; }
   .ctlrow {
@@ -172,7 +199,11 @@
     <div class="band summary" id="band-summary"><span class="swatch" aria-hidden="true"></span><span id="band-summary-label">Shaded: 500 – 1,500 m above sea level</span></div>
     <div id="panel-body">
     <p class="tagline">Find land at the altitude that suits your holiday.</p>
-    <fieldset class="bandctl">
+    <div class="modes" role="radiogroup" aria-label="Shade the map by">
+      <button type="button" role="radio" class="mode" id="mode-altitude" data-mode="altitude" aria-checked="true">Altitude</button>
+      <button type="button" role="radio" class="mode" id="mode-temperature" data-mode="temperature" aria-checked="false">Temperature</button>
+    </div>
+    <fieldset class="bandctl" id="altitude-controls">
       <legend class="band"><span class="swatch" aria-hidden="true"></span><span id="band-label">Shaded: 500 – 1,500 m above sea level</span></legend>
       <div class="ctlrow">
         <label for="min-range">Lowest</label>
@@ -186,6 +217,27 @@
       </div>
       <p class="hint">Click anywhere on the map to see its height.</p>
     </fieldset>
+    <fieldset class="bandctl" id="temperature-controls" hidden>
+      <legend class="band"><span class="swatch" aria-hidden="true"></span><span id="temp-label">Shaded: highs 18 – 27 °C, nights 10 °C or warmer</span></legend>
+      <div class="months" role="radiogroup" aria-label="Month of visit" id="months"></div>
+      <div class="ctlrow wide">
+        <label for="hi-min">Highs from</label>
+        <input id="hi-min" type="range" min="0" max="40" step="1" value="18">
+        <span class="num"><output id="hi-min-out" for="hi-min">18</output> °C</span>
+      </div>
+      <div class="ctlrow wide">
+        <label for="hi-max">Highs up to</label>
+        <input id="hi-max" type="range" min="0" max="40" step="1" value="27">
+        <span class="num"><output id="hi-max-out" for="hi-max">27</output> °C</span>
+      </div>
+      <div class="ctlrow wide">
+        <label for="night-min">Nights at least</label>
+        <input id="night-min" type="range" min="-5" max="25" step="1" value="10">
+        <span class="num"><output id="night-min-out" for="night-min">10</output> °C</span>
+      </div>
+      <label class="check"><input type="checkbox" id="warming"> Add 1 °C for recent warming</label>
+      <p class="hint">Green: typical daytime highs in your range. Pale: nights colder than you want. Click a spot for its temperatures through the year. Covers Costa Rica only for now.</p>
+    </fieldset>
     <form class="search" id="search-form" role="search" autocomplete="off">
       <label for="search-input" class="visually-hidden">Search for a place</label>
       <input id="search-input" type="search" placeholder="Search for a town or village" enterkeyhint="search">
@@ -198,7 +250,8 @@
       <summary>About this map</summary>
       <p>Green shading marks land between your lowest and highest altitudes. Heights come from global elevation data with about 30 m detail, so a single spot can differ from a local sign by a few tens of metres, more on steep slopes.</p>
       <p>Altitude is only a rough guide to temperature. The same height is warmer nearer the equator and varies with the season.</p>
-      <p class="credits">Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>. Map tiles by <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>. Elevation from <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noopener">Terrain Tiles on AWS</a> (<a href="https://github.com/tilezen/joerd/blob/master/docs/attribution.md" target="_blank" rel="noopener">sources</a>). Place search by <a href="https://nominatim.org" target="_blank" rel="noopener">Nominatim</a>. Built with <a href="https://maplibre.org" target="_blank" rel="noopener">MapLibre</a>.</p>
+      <p>Temperature mode uses typical daily highs and lows for each month, averaged over 1981–2010 at about 1 km detail. They are typical values, not forecasts, and recent years have run around 1 °C warmer; tick "Add 1 °C" to allow for that.</p>
+      <p class="credits">Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>. Map tiles by <a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a>. Elevation from <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noopener">Terrain Tiles on AWS</a> (<a href="https://github.com/tilezen/joerd/blob/master/docs/attribution.md" target="_blank" rel="noopener">sources</a>). Temperatures from <a href="https://www.chelsa-climate.org" target="_blank" rel="noopener">CHELSA</a> climatologies (Karger et al., CC0). Place search by <a href="https://nominatim.org" target="_blank" rel="noopener">Nominatim</a>. Built with <a href="https://maplibre.org" target="_blank" rel="noopener">MapLibre</a>.</p>
     </details>
     </div>
   </header>
@@ -337,7 +390,7 @@
         if (document.activeElement !== maxNum) maxNum.value = BAND.max;
         const text = 'Shaded: ' + nf.format(BAND.min) + ' – ' + nf.format(BAND.max) + ' m above sea level';
         bandLabel.textContent = text;
-        bandSummaryLabel.textContent = text;
+        updateSummary();
       }
 
       let saveTimer = null;
@@ -373,14 +426,257 @@
       maxNum.addEventListener('change', function () { if (maxNum.value !== '') setMax(+maxNum.value); else syncControls(); });
       syncControls();
 
+      // ---- Temperature mode: typical highs and lows by month ----
+      // CHELSA V2.1 climatologies (1981–2010, about 1 km, CC0), converted to Terrarium tiles in °C
+      // by scripts/build_climate_tiles.py. Covers Costa Rica for now.
+      const CLIMATE_BBOX = [-86.3, 7.7, -82.3, 11.5];
+      const CLIMATE_ZOOM = 9;
+      const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+                      'August', 'September', 'October', 'November', 'December'];
+      const MONTH_LETTERS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
+      // On the website the tiles sit next to the page; opened as a file, read them from GitHub.
+      const CLIMATE_BASE = /^https?:$/.test(location.protocol)
+        ? new URL('climate/', location.href).href
+        : 'https://raw.githubusercontent.com/phempstock/holiday-altitude/climate/climate/';
+      function climateTiles(v, month) {
+        return CLIMATE_BASE + v + '/' + String(month).padStart(2, '0') + '/{z}/{x}/{y}.png';
+      }
+
+      var CLIM = { mode: 'altitude', month: new Date().getMonth() + 1, hiMin: 18, hiMax: 27, nightMin: 10, warming: false };
+      try {
+        const saved = JSON.parse(localStorage.getItem('holiday-altitude-climate') || 'null');
+        if (saved) {
+          if (saved.mode === 'altitude' || saved.mode === 'temperature') CLIM.mode = saved.mode;
+          if (saved.month >= 1 && saved.month <= 12) CLIM.month = saved.month;
+          if (isFinite(saved.hiMin) && isFinite(saved.hiMax) && saved.hiMin >= 0 && saved.hiMax <= 40 && saved.hiMax > saved.hiMin) {
+            CLIM.hiMin = saved.hiMin; CLIM.hiMax = saved.hiMax;
+          }
+          if (isFinite(saved.nightMin) && saved.nightMin >= -5 && saved.nightMin <= 25) CLIM.nightMin = saved.nightMin;
+          CLIM.warming = !!saved.warming;
+        }
+      } catch (e) { /* storage unavailable: use the defaults */ }
+
+      const warmAdj = function () { return CLIM.warming ? 1 : 0; };
+      const CLEAR = 'rgba(0,0,0,0)';
+
+      // Green where the month's typical high is within the range (allowing for the warming option).
+      function highRamp() {
+        const lo = CLIM.hiMin - warmAdj(), hi = CLIM.hiMax - warmAdj();
+        return ['interpolate', ['linear'], ['elevation'],
+          -100, CLEAR, lo - 0.05, CLEAR, lo, BAND.color, hi, BAND.color, hi + 0.05, CLEAR, 80, CLEAR];
+      }
+      // A pale veil where nights are colder than wanted. -99 °C means "no data" and stays clear.
+      function nightRamp() {
+        const t = CLIM.nightMin - warmAdj();
+        const veil = 'rgb(246,247,243)';
+        return ['interpolate', ['linear'], ['elevation'],
+          -100, CLEAR, -95, CLEAR, -94.9, veil, t, veil, t + 0.05, CLEAR, 80, CLEAR];
+      }
+
+      function climateSummaryText() {
+        return 'Shaded: highs ' + CLIM.hiMin + ' – ' + CLIM.hiMax + ' °C, nights ' + CLIM.nightMin +
+          ' °C or warmer, in ' + MONTHS[CLIM.month - 1];
+      }
+      function updateSummary() {
+        const el = document.getElementById('band-summary-label');
+        if (CLIM && CLIM.mode === 'temperature') {
+          el.textContent = climateSummaryText();
+        } else {
+          const f = new Intl.NumberFormat('en-GB');
+          el.textContent = 'Shaded: ' + f.format(BAND.min) + ' – ' + f.format(BAND.max) + ' m above sea level';
+        }
+      }
+
+      const hiMinEl = document.getElementById('hi-min');
+      const hiMaxEl = document.getElementById('hi-max');
+      const nightEl = document.getElementById('night-min');
+      const warmEl = document.getElementById('warming');
+      const monthsEl = document.getElementById('months');
+
+      MONTH_LETTERS.forEach(function (letter, i) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.setAttribute('role', 'radio');
+        b.setAttribute('aria-label', MONTHS[i]);
+        b.title = MONTHS[i];
+        b.textContent = letter;
+        b.dataset.month = String(i + 1);
+        b.addEventListener('click', function () { setMonth(i + 1); });
+        monthsEl.appendChild(b);
+      });
+
+      function syncClimateControls() {
+        hiMinEl.value = CLIM.hiMin; hiMaxEl.value = CLIM.hiMax; nightEl.value = CLIM.nightMin;
+        warmEl.checked = CLIM.warming;
+        document.getElementById('hi-min-out').textContent = CLIM.hiMin;
+        document.getElementById('hi-max-out').textContent = CLIM.hiMax;
+        document.getElementById('night-min-out').textContent = CLIM.nightMin;
+        monthsEl.querySelectorAll('button').forEach(function (b) {
+          b.setAttribute('aria-checked', String(+b.dataset.month === CLIM.month));
+        });
+        document.getElementById('temp-label').textContent = climateSummaryText();
+        document.querySelectorAll('.mode').forEach(function (b) {
+          b.setAttribute('aria-checked', String(b.dataset.mode === CLIM.mode));
+        });
+        document.getElementById('altitude-controls').hidden = CLIM.mode !== 'altitude';
+        document.getElementById('temperature-controls').hidden = CLIM.mode !== 'temperature';
+        updateSummary();
+      }
+
+      let climSaveTimer = null;
+      function applyClimate() {
+        syncClimateControls();
+        if (map.getLayer('clim-high')) {
+          map.setPaintProperty('clim-high', 'color-relief-color', highRamp());
+          map.setPaintProperty('clim-night', 'color-relief-color', nightRamp());
+        }
+        const temp = CLIM.mode === 'temperature';
+        if (map.getLayer('altitude-band')) map.setLayoutProperty('altitude-band', 'visibility', temp ? 'none' : 'visible');
+        if (map.getLayer('clim-high')) {
+          map.setLayoutProperty('clim-high', 'visibility', temp ? 'visible' : 'none');
+          map.setLayoutProperty('clim-night', 'visibility', temp ? 'visible' : 'none');
+        }
+        clearTimeout(climSaveTimer);
+        climSaveTimer = setTimeout(function () {
+          try { localStorage.setItem('holiday-altitude-climate', JSON.stringify(CLIM)); } catch (e) {}
+        }, 400);
+      }
+
+      function setMonth(m) {
+        CLIM.month = m;
+        ['tmax', 'tmin'].forEach(function (v) {
+          const src = map.getSource('clim-' + v);
+          if (src && src.setTiles) src.setTiles([climateTiles(v, m)]);
+        });
+        applyClimate();
+      }
+
+      document.querySelectorAll('.mode').forEach(function (b) {
+        b.addEventListener('click', function () { CLIM.mode = b.dataset.mode; applyClimate(); });
+      });
+      // The highs range always spans at least 1 °C; moving one end past the other pushes it along.
+      hiMinEl.addEventListener('input', function () {
+        CLIM.hiMin = Math.min(+hiMinEl.value, 39);
+        if (CLIM.hiMax <= CLIM.hiMin) CLIM.hiMax = CLIM.hiMin + 1;
+        applyClimate();
+      });
+      hiMaxEl.addEventListener('input', function () {
+        CLIM.hiMax = Math.max(+hiMaxEl.value, 1);
+        if (CLIM.hiMin >= CLIM.hiMax) CLIM.hiMin = CLIM.hiMax - 1;
+        applyClimate();
+      });
+      nightEl.addEventListener('input', function () { CLIM.nightMin = +nightEl.value; applyClimate(); });
+      warmEl.addEventListener('change', function () { CLIM.warming = warmEl.checked; applyClimate(); });
+      syncClimateControls();
+
+      function addClimateLayers(beforeId) {
+        ['tmax', 'tmin'].forEach(function (v) {
+          const def = {
+            type: 'raster-dem', tiles: [climateTiles(v, CLIM.month)], encoding: 'terrarium',
+            tileSize: 256, minzoom: 5, maxzoom: CLIMATE_ZOOM, bounds: CLIMATE_BBOX
+          };
+          if (v === 'tmax') def.attribution = '<a href="https://www.chelsa-climate.org" target="_blank" rel="noopener">Temperatures: CHELSA 1981–2010</a>';
+          map.addSource('clim-' + v, def);
+        });
+        map.addLayer({ id: 'clim-high', type: 'color-relief', source: 'clim-tmax',
+          layout: { visibility: 'none' },
+          paint: { 'color-relief-color': highRamp(), 'color-relief-opacity': BAND.opacity } }, beforeId);
+        map.addLayer({ id: 'clim-night', type: 'color-relief', source: 'clim-tmin',
+          layout: { visibility: 'none' },
+          paint: { 'color-relief-color': nightRamp(), 'color-relief-opacity': 0.75 } }, beforeId);
+        applyClimate();
+      }
+
+      function inClimateArea(lng, lat) {
+        return lng >= CLIMATE_BBOX[0] && lng <= CLIMATE_BBOX[2] && lat >= CLIMATE_BBOX[1] && lat <= CLIMATE_BBOX[3];
+      }
+
+      // Small chart: each month's typical low-to-high range, the chosen month highlighted,
+      // the chosen range of highs as a green band and the night limit as a dashed line.
+      function climateStrip(hi, lo, sel) {
+        const W = 216, H = 84, top = 6, bottom = 66;
+        const vmax = Math.max(Math.max.apply(null, hi), CLIM.hiMax) + 1;
+        const vmin = Math.min(Math.min.apply(null, lo), CLIM.nightMin) - 1;
+        const y = function (v) { return (top + (vmax - v) / (vmax - vmin) * (bottom - top)).toFixed(1); };
+        let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" role="img" aria-label="Typical highs and lows through the year">';
+        s += '<rect x="0" y="' + y(CLIM.hiMax) + '" width="' + W + '" height="' + (y(CLIM.hiMin) - y(CLIM.hiMax)).toFixed(1) + '" fill="#1f9d6b" fill-opacity="0.16"/>';
+        s += '<line x1="0" x2="' + W + '" y1="' + y(CLIM.nightMin) + '" y2="' + y(CLIM.nightMin) + '" stroke="#5b6b8a" stroke-width="1" stroke-dasharray="3 3"/>';
+        for (let i = 0; i < 12; i++) {
+          const x = 9 + i * 17.8;
+          const on = i === sel;
+          s += '<rect x="' + (x - 4.5).toFixed(1) + '" y="' + y(hi[i]) + '" width="9" height="' + Math.max(1, y(lo[i]) - y(hi[i])).toFixed(1) +
+            '" rx="2" fill="' + (on ? '#17784f' : '#a3afa9') + '"/>';
+          s += '<text x="' + x.toFixed(1) + '" y="' + (H - 4) + '" text-anchor="middle" font-size="9" font-family="IBM Plex Sans, sans-serif" fill="' +
+            (on ? '#1f2a26' : '#6b7872') + '" font-weight="' + (on ? 700 : 400) + '">' + MONTH_LETTERS[i] + '</text>';
+        }
+        return s + '</svg>';
+      }
+
+      // Adds the month's temperatures, a verdict and the 12-month chart to a popup.
+      async function appendClimate(container, lng, lat) {
+        const div = document.createElement('div');
+        div.className = 'clim-pop';
+        container.appendChild(div);
+        if (!inClimateArea(lng, lat)) {
+          if (CLIM.mode === 'temperature') div.textContent = 'Temperature data covers Costa Rica only for now.';
+          else div.remove();
+          return;
+        }
+        div.textContent = 'Reading temperatures…';
+        try {
+          const pairs = await Promise.all(MONTHS.map(function (_, i) {
+            return Promise.all([
+              terrariumAt(climateTiles('tmax', i + 1), CLIMATE_ZOOM, lng, lat),
+              terrariumAt(climateTiles('tmin', i + 1), CLIMATE_ZOOM, lng, lat)
+            ]);
+          }));
+          if (pairs.some(function (p) { return p[0] < -90 || p[1] < -90; })) {
+            div.textContent = 'No temperature data for this spot.';
+            return;
+          }
+          const hi = pairs.map(function (p) { return p[0] + warmAdj(); });
+          const lo = pairs.map(function (p) { return p[1] + warmAdj(); });
+          const m = CLIM.month - 1;
+          const h = Math.round(hi[m]), l = Math.round(lo[m]);
+          div.textContent = '';
+          const strong = document.createElement('strong');
+          strong.textContent = 'In ' + MONTHS[m] + ': highs about ' + h + ' °C, lows ' + l + ' °C';
+          const verdict = document.createElement('span');
+          verdict.className = 'verdict';
+          const notes = [];
+          if (hi[m] > CLIM.hiMax) notes.push('highs ' + Math.max(1, Math.round(hi[m] - CLIM.hiMax)) + ' °C above your range');
+          if (hi[m] < CLIM.hiMin) notes.push('highs ' + Math.max(1, Math.round(CLIM.hiMin - hi[m])) + ' °C below your range');
+          if (lo[m] < CLIM.nightMin) notes.push('nights ' + Math.max(1, Math.round(CLIM.nightMin - lo[m])) + ' °C colder than you want');
+          if (notes.length) {
+            const t = notes.join('; ');
+            verdict.textContent = t.charAt(0).toUpperCase() + t.slice(1);
+            verdict.classList.add('out');
+          } else {
+            verdict.textContent = 'Within your temperatures';
+            verdict.classList.add('in');
+          }
+          div.appendChild(strong);
+          div.appendChild(verdict);
+          const chart = document.createElement('div');
+          chart.innerHTML = climateStrip(hi, lo, m);  // built only from numbers and fixed text
+          div.appendChild(chart);
+          const cap = document.createElement('span');
+          cap.className = 'cap';
+          cap.textContent = 'Bars: typical low to high each month. Green: your highs. Dashed: your night limit.';
+          div.appendChild(cap);
+        } catch (err) {
+          div.textContent = 'The temperatures could not be read here.';
+          console.warn(err);
+        }
+      }
+
       // ---- Height of any spot, read from the same free elevation tiles ----
       // Terrarium tiles store height in each pixel's colour: (R × 256 + G + B / 256) − 32768 metres.
       const HEIGHT_ZOOM = 13;  // about 19 m per pixel at the equator, finer than the source data
       const tileCache = new Map();
 
-      function loadTile(z, x, y) {
-        const key = z + '/' + x + '/' + y;
-        if (tileCache.has(key)) return tileCache.get(key);
+      function loadTileUrl(url) {
+        if (tileCache.has(url)) return tileCache.get(url);
         const p = new Promise(function (resolve, reject) {
           const img = new Image();
           img.crossOrigin = 'anonymous';
@@ -391,25 +687,28 @@
             ctx.drawImage(img, 0, 0);
             resolve(ctx.getImageData(0, 0, c.width, c.height));
           };
-          img.onerror = function () { tileCache.delete(key); reject(new Error('Elevation tile failed to load')); };
-          img.src = ELEVATION_TILES.replace('{z}', z).replace('{x}', x).replace('{y}', y);
+          img.onerror = function () { tileCache.delete(url); reject(new Error('Tile failed to load: ' + url)); };
+          img.src = url;
         });
-        tileCache.set(key, p);
+        tileCache.set(url, p);
         return p;
       }
 
-      async function heightAt(lng, lat) {
-        const z = HEIGHT_ZOOM, n = Math.pow(2, z);
+      // Reads the Terrarium-encoded value at a point from any tile set (height in m, or °C).
+      async function terrariumAt(template, z, lng, lat) {
+        const n = Math.pow(2, z);
         const xf = (lng + 180) / 360 * n;
         const latRad = lat * Math.PI / 180;
         const yf = (1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * n;
         const x = Math.floor(xf), y = Math.floor(yf);
-        const data = await loadTile(z, x, y);
+        const data = await loadTileUrl(template.replace('{z}', z).replace('{x}', x).replace('{y}', y));
         const px = Math.min(data.width - 1, Math.floor((xf - x) * data.width));
         const py = Math.min(data.height - 1, Math.floor((yf - y) * data.height));
         const i = (py * data.width + px) * 4;
         return (data.data[i] * 256 + data.data[i + 1] + data.data[i + 2] / 256) - 32768;
       }
+
+      function heightAt(lng, lat) { return terrariumAt(ELEVATION_TILES, HEIGHT_ZOOM, lng, lat); }
 
       // Builds the height line and the in/out-of-band line used in popups.
       function heightContent(h) {
@@ -449,7 +748,7 @@
         const wrap = document.createElement('div');
         wrap.className = 'height-pop';
         wrap.textContent = 'Reading height…';
-        clickPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '240px' })
+        clickPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '250px' })
           .setLngLat(e.lngLat).setDOMContent(wrap).addTo(map);
         try {
           const h = await heightAt(e.lngLat.lng, e.lngLat.lat);
@@ -459,6 +758,7 @@
           wrap.textContent = 'The height could not be read here. Check your internet connection and try again.';
           console.warn(err);
         }
+        appendClimate(wrap, e.lngLat.lng, e.lngLat.lat);
       });
 
       function addAltitudeBand() {
@@ -503,6 +803,12 @@
             'color-relief-opacity': BAND.opacity
           }
         }, firstLabel ? firstLabel.id : undefined);
+
+        try {
+          addClimateLayers(firstLabel ? firstLabel.id : undefined);
+        } catch (err) {
+          console.warn('Temperature layers could not be added', err);
+        }
       }
 
       // ---- Smaller places: make village and hamlet names easier to read ----
@@ -575,6 +881,7 @@
           hp.textContent = '';
           hp.appendChild(heightContent(h));
         }).catch(function () { hp.textContent = 'Height unavailable.'; });
+        appendClimate(box, lon, lat);
         placeMarker = new maplibregl.Marker({ color: '#c2410c' }).setLngLat([lon, lat]).setPopup(popup).addTo(map);
         placeMarker.togglePopup();
       }
