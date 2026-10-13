@@ -236,7 +236,7 @@
         <span class="num"><output id="night-min-out" for="night-min">10</output> °C</span>
       </div>
       <label class="check"><input type="checkbox" id="warming"> Add 1 °C for recent warming</label>
-      <p class="hint">Green: typical daytime highs in your range. Pale: nights colder than you want. Click a spot for its temperatures through the year. Covers Costa Rica only for now.</p>
+      <p class="hint">Green: typical daytime highs in your range. Pale: nights colder than you want. Click a spot for its temperatures through the year. Covers Costa Rica, Spain, Portugal and the Balearic and Canary Islands for now.</p>
     </fieldset>
     <form class="search" id="search-form" role="search" autocomplete="off">
       <label for="search-input" class="visually-hidden">Search for a place</label>
@@ -429,7 +429,16 @@
       // ---- Temperature mode: typical highs and lows by month ----
       // CHELSA V2.1 climatologies (1981–2010, about 1 km, CC0), converted to Terrarium tiles in °C
       // by scripts/build_climate_tiles.py. Covers Costa Rica for now.
-      const CLIMATE_BBOX = [-86.3, 7.7, -82.3, 11.5];
+      // Areas with temperature tiles (west, south, east, north). Keep in step with REGIONS in
+      // scripts/build_climate_tiles.py. Each gets its own map layers, so no tiles are
+      // requested outside these areas.
+      const CLIMATE_REGIONS = {
+        'costa-rica': [-86.3, 7.7, -82.3, 11.5],
+        'spain': [-9.6, 35.8, 4.6, 44.0],              // mainland Spain, Portugal, Balearic Islands
+        'canary-islands': [-18.4, 27.5, -13.2, 29.6]
+      };
+      const REGION_IDS = Object.keys(CLIMATE_REGIONS);
+      const CLIMATE_COVERAGE = 'Costa Rica, Spain, Portugal and the Balearic and Canary Islands';
       const CLIMATE_ZOOM = 9;
       const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
                       'August', 'September', 'October', 'November', 'December'];
@@ -526,16 +535,15 @@
       let climSaveTimer = null;
       function applyClimate() {
         syncClimateControls();
-        if (map.getLayer('clim-high')) {
-          map.setPaintProperty('clim-high', 'color-relief-color', highRamp());
-          map.setPaintProperty('clim-night', 'color-relief-color', nightRamp());
-        }
         const temp = CLIM.mode === 'temperature';
         if (map.getLayer('altitude-band')) map.setLayoutProperty('altitude-band', 'visibility', temp ? 'none' : 'visible');
-        if (map.getLayer('clim-high')) {
-          map.setLayoutProperty('clim-high', 'visibility', temp ? 'visible' : 'none');
-          map.setLayoutProperty('clim-night', 'visibility', temp ? 'visible' : 'none');
-        }
+        REGION_IDS.forEach(function (r) {
+          if (!map.getLayer('clim-high-' + r)) return;
+          map.setPaintProperty('clim-high-' + r, 'color-relief-color', highRamp());
+          map.setPaintProperty('clim-night-' + r, 'color-relief-color', nightRamp());
+          map.setLayoutProperty('clim-high-' + r, 'visibility', temp ? 'visible' : 'none');
+          map.setLayoutProperty('clim-night-' + r, 'visibility', temp ? 'visible' : 'none');
+        });
         clearTimeout(climSaveTimer);
         climSaveTimer = setTimeout(function () {
           try { localStorage.setItem('holiday-altitude-climate', JSON.stringify(CLIM)); } catch (e) {}
@@ -544,9 +552,11 @@
 
       function setMonth(m) {
         CLIM.month = m;
-        ['tmax', 'tmin'].forEach(function (v) {
-          const src = map.getSource('clim-' + v);
-          if (src && src.setTiles) src.setTiles([climateTiles(v, m)]);
+        REGION_IDS.forEach(function (r) {
+          ['tmax', 'tmin'].forEach(function (v) {
+            const src = map.getSource('clim-' + v + '-' + r);
+            if (src && src.setTiles) src.setTiles([climateTiles(v, m)]);
+          });
         });
         applyClimate();
       }
@@ -570,25 +580,30 @@
       syncClimateControls();
 
       function addClimateLayers(beforeId) {
-        ['tmax', 'tmin'].forEach(function (v) {
-          const def = {
-            type: 'raster-dem', tiles: [climateTiles(v, CLIM.month)], encoding: 'terrarium',
-            tileSize: 256, minzoom: 5, maxzoom: CLIMATE_ZOOM, bounds: CLIMATE_BBOX
-          };
-          if (v === 'tmax') def.attribution = '<a href="https://www.chelsa-climate.org" target="_blank" rel="noopener">Temperatures: CHELSA 1981–2010</a>';
-          map.addSource('clim-' + v, def);
+        REGION_IDS.forEach(function (r, i) {
+          ['tmax', 'tmin'].forEach(function (v) {
+            const def = {
+              type: 'raster-dem', tiles: [climateTiles(v, CLIM.month)], encoding: 'terrarium',
+              tileSize: 256, minzoom: 5, maxzoom: CLIMATE_ZOOM, bounds: CLIMATE_REGIONS[r]
+            };
+            if (v === 'tmax' && i === 0) def.attribution = '<a href="https://www.chelsa-climate.org" target="_blank" rel="noopener">Temperatures: CHELSA 1981–2010</a>';
+            map.addSource('clim-' + v + '-' + r, def);
+          });
+          map.addLayer({ id: 'clim-high-' + r, type: 'color-relief', source: 'clim-tmax-' + r,
+            layout: { visibility: 'none' },
+            paint: { 'color-relief-color': highRamp(), 'color-relief-opacity': BAND.opacity } }, beforeId);
+          map.addLayer({ id: 'clim-night-' + r, type: 'color-relief', source: 'clim-tmin-' + r,
+            layout: { visibility: 'none' },
+            paint: { 'color-relief-color': nightRamp(), 'color-relief-opacity': 0.75 } }, beforeId);
         });
-        map.addLayer({ id: 'clim-high', type: 'color-relief', source: 'clim-tmax',
-          layout: { visibility: 'none' },
-          paint: { 'color-relief-color': highRamp(), 'color-relief-opacity': BAND.opacity } }, beforeId);
-        map.addLayer({ id: 'clim-night', type: 'color-relief', source: 'clim-tmin',
-          layout: { visibility: 'none' },
-          paint: { 'color-relief-color': nightRamp(), 'color-relief-opacity': 0.75 } }, beforeId);
         applyClimate();
       }
 
       function inClimateArea(lng, lat) {
-        return lng >= CLIMATE_BBOX[0] && lng <= CLIMATE_BBOX[2] && lat >= CLIMATE_BBOX[1] && lat <= CLIMATE_BBOX[3];
+        return REGION_IDS.some(function (r) {
+          const b = CLIMATE_REGIONS[r];
+          return lng >= b[0] && lng <= b[2] && lat >= b[1] && lat <= b[3];
+        });
       }
 
       // Small chart: each month's typical low-to-high range, the chosen month highlighted,
@@ -618,7 +633,7 @@
         div.className = 'clim-pop';
         container.appendChild(div);
         if (!inClimateArea(lng, lat)) {
-          if (CLIM.mode === 'temperature') div.textContent = 'Temperature data covers Costa Rica only for now.';
+          if (CLIM.mode === 'temperature') div.textContent = 'Temperature data covers ' + CLIMATE_COVERAGE + ' for now.';
           else div.remove();
           return;
         }

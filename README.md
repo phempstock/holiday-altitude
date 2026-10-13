@@ -4,7 +4,7 @@ A free web map that shades the land between two altitudes you choose, to help pi
 
 ## Features
 - Shade by **altitude**: lowest and highest altitude sliders (or type exact figures); the shading updates as you move them
-- Shade by **temperature** (Costa Rica for now): pick the month of your visit and the range of typical daytime highs you want, plus the coldest nights you'll accept; optional +1 °C for recent warming
+- Shade by **temperature** (Costa Rica, Spain, Portugal, Balearic and Canary Islands for now): pick the month of your visit and the range of typical daytime highs you want, plus the coldest nights you'll accept; optional +1 °C for recent warming
 - Click anywhere to see its height, whether it's inside your band, and its typical highs and lows through the year
 - Search for countries, towns and small villages
 - Light hill shading; fold-away panel on phones
