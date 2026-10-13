@@ -10,7 +10,7 @@ A free web map that shades the land between two altitudes you choose, to help pi
 - Installable on phones from the browser's "Add to Home Screen" / "Install app"
 
 ## Versions
-- `v1.0-altitude`: altitude-only version, kept as a fixed restore point.
+- `restore/v1.0-altitude` branch: the altitude-only version, kept unchanged as a restore point.
 - Climate features (month of visit, typical temperatures) are developed on the `climate` branch and only merged into `main` once approved.
 
 ## Data and credits (all free, no API keys)
