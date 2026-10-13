@@ -471,8 +471,16 @@
           attribution: '<a href="https://github.com/tilezen/joerd/blob/master/docs/attribution.md" target="_blank" rel="noopener">Elevation: Terrain Tiles (Mapzen, AWS Open Data)</a>'
         });
 
-        // Put the band beneath the map's labels so place names stay readable.
-        const firstLabel = map.getStyle().layers.find(function (l) { return l.type === 'symbol'; });
+        // Draw the shading and the band underneath the sea, lakes and rivers.
+        // The elevation data includes a coarse, blocky ocean floor; the base map's opaque
+        // water layer then hides it, and the coastline comes from the more accurate map data.
+        // Roads, buildings and labels stay on top. Falls back to below the labels if the
+        // base map has no water layers.
+        const layers = map.getStyle().layers;
+        const firstWater = layers.find(function (l) {
+          return l['source-layer'] === 'water' || l['source-layer'] === 'waterway';
+        });
+        const firstLabel = firstWater || layers.find(function (l) { return l.type === 'symbol'; });
 
         // Light hill shading so valleys and ridges are easy to read.
         map.addLayer({
@@ -638,8 +646,28 @@
       });
 
       let loaded = false;
+      // Safeguard: if the page was opened in a hidden or not-yet-sized window, the map can
+      // start at a default small size. Resize it to fill the window, and re-frame Costa Rica
+      // if that happened before anyone moved the map.
+      function fixMapSize(refit) {
+        const box = document.getElementById('map').getBoundingClientRect();
+        const cv = map.getCanvas();
+        if (Math.abs(cv.clientWidth - box.width) > 2 || Math.abs(cv.clientHeight - box.height) > 2) {
+          map.resize();
+          if (refit) map.fitBounds(START_BOUNDS, { padding: startPadding(), duration: 0 });
+        }
+      }
+      let userMoved = false;
+      map.on('dragstart', function () { userMoved = true; });
+      map.on('zoomstart', function (e) { if (e.originalEvent) userMoved = true; });
+      document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) fixMapSize(!userMoved);
+      });
+      window.addEventListener('resize', function () { fixMapSize(false); });
+
       map.on('load', function () {
         loaded = true;
+        fixMapSize(true);
         updateReadout();
         try { strengthenSmallPlaceLabels(); } catch (err) { console.warn(err); }
         try {
