@@ -1,0 +1,51 @@
+# Builds the climate tiles from CHELSA (runs on GitHub's servers, free for public repos).
+# Runs when the conversion script changes on the climate branch, or by hand from the Actions tab.
+name: Build climate tiles
+
+on:
+  push:
+    branches: [climate]
+    paths:
+      - scripts/build_climate_tiles.py
+      - .github/workflows/build-climate.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-climate
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: climate
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install libraries
+        run: pip install "rasterio==1.4.3" "numpy<3" "pillow<12"
+
+      - name: Convert CHELSA temperatures to map tiles
+        run: |
+          rm -rf climate
+          python scripts/build_climate_tiles.py --out climate
+
+      - name: Save the tiles to the climate branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898299+github-actions[bot]@users.noreply.github.com"
+          git add climate
+          if git diff --cached --quiet; then
+            echo "No changes to the tiles."
+          else
+            git commit -m "Climate tiles: CHELSA 1981-2010 monthly highs and lows for Costa Rica"
+            git push origin HEAD:climate
+          fi
